@@ -1,0 +1,6 @@
+Confirmation state machine — the indicator now has a 3-stage lifecycle per session: WATCHING → SWEEP DETECTED (FVG pending) → CONFIRMED. It only fires the real signal once both the primary AND correlated have formed a matching FVG after the sweep. FVG accumulation only starts after the sweep — nothing before counts.
+Pending label — when a sweep is detected but FVGs haven't confirmed yet, a dimmed ◌ SWEEP ↑ · FVG PENDING label appears so you know it's live and being tracked. Toggleable.
+Size filter — applied to the primary instrument FVG for confirmation. Correlated just needs any FVG.
+Info panel STATUS row — updates live: WATCHING → SWEEP ↑ · FVG? → CONFIRMED ▲.
+Colors — every visual element now pulls from your color inputs. Q1–Q4, bull, bear, daily open, and session opacity are all fully adjustable.
+4 alerts — sweep detected (early warning) + confirmed (trade ready), both bull and bear.
