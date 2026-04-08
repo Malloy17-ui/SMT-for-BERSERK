@@ -6,8 +6,7 @@ Complete User Guide  ·  TradingView Pine Script v5
 
 Overview
 The Malloy Labs SMT Divergence Indicator is built around a session-based time and price model. It detects Smart Money Technique (SMT) divergence between two correlated instruments, filters setups by daily open bias, and provides FVG-based confirmation zones — all within a structured four-session framework.
-
-The indicator is designed for intraday trading, optimized for the 15-minute timeframe, and supports all major forex pairs, BTC/ETH, and equity index futures (NQ/ES).
+I designed this for intraday trading, optimized for the 15-minute timeframe, and supports all major forex pairs, BTC/ETH, and equity index futures (NQ/ES).
 
 Session Structure
 The trading day is divided into four 6-hour sessions, all times in New York (Eastern) time. The indicator automatically detects and color-codes each session on the chart.
