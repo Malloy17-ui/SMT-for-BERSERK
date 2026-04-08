@@ -1,0 +1,198 @@
+//@version=5
+indicator("Malloy Labs · SMT Divergence", shorttitle="ML·SMT", overlay=true,
+         max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+
+G_SMT = "⚡  SMT"
+G_FVG = "📦  FVG"
+G_VIS = "🎨  Visuals"
+
+corr_sym   = input.symbol("GBPUSD", "Correlated Symbol", group=G_SMT, tooltip="EURUSD↔GBPUSD  |  USDJPY↔USDCHF  |  AUDUSD↔NZDUSD\nGBPJPY↔EURJPY  |  BTCUSD↔ETHUSD  |  NQ↔ES")
+show_fvg   = input.bool(true,  "Show FVGs",          group=G_FVG)
+fvg_filter = input.bool(true,  "FVG Size Filter",    group=G_FVG)
+fvg_mult   = input.float(1.5,  "Max FVG (× ATR14)", group=G_FVG, minval=0.1, step=0.1)
+show_sess  = input.bool(true,  "Session Boxes",      group=G_VIS)
+show_dopen = input.bool(true,  "Daily Open Line",    group=G_VIS)
+show_tgt   = input.bool(true,  "Target Lines",       group=G_VIS)
+show_table = input.bool(true,  "Info Panel",         group=G_VIS)
+
+TZ   = "America/New_York"
+nyH  = hour(time, TZ)
+curQ = nyH >= 18 ? 1 : nyH < 6 ? 2 : nyH < 12 ? 3 : 4
+qChg = curQ != curQ[1]
+
+var float dOpen = na
+var float dHigh = na
+var float dLow  = na
+
+if curQ == 1 and qChg
+    dOpen := open
+    dHigh := high
+    dLow  := low
+
+if not na(dOpen)
+    dHigh := math.max(nz(dHigh, high), high)
+    dLow  := math.min(nz(dLow,  low),  low)
+
+bullBias = not na(dOpen) and close < dOpen
+bearBias = not na(dOpen) and close > dOpen
+
+[c_h, c_l] = request.security(corr_sym, timeframe.period, [high, low], lookahead=barmerge.lookahead_off)
+
+var float cH_p = na
+var float cL_p = na
+var float cH_c = na
+var float cL_c = na
+var float pH_p = na
+var float pL_p = na
+var float pH_c = na
+var float pL_c = na
+
+if qChg
+    pH_p := cH_p
+    pL_p := cL_p
+    pH_c := cH_c
+    pL_c := cL_c
+    cH_p := high
+    cL_p := low
+    cH_c := c_h
+    cL_c := c_l
+else
+    cH_p := math.max(nz(cH_p, high), high)
+    cL_p := math.min(nz(cL_p, low),  low)
+    cH_c := math.max(nz(cH_c, c_h),  c_h)
+    cL_c := math.min(nz(cL_c, c_l),  c_l)
+
+validPair = curQ >= 2
+
+var bool bFired = false
+var bool rFired = false
+
+if qChg
+    bFired := false
+    rFired := false
+
+bSMT_cond = validPair and not na(pL_p) and not na(pL_c) and not na(dOpen) and low < pL_p and cL_c >= pL_c and low < dOpen
+rSMT_cond = validPair and not na(pH_p) and not na(pH_c) and not na(dOpen) and high > pH_p and cH_c <= pH_c and high > dOpen
+
+bSMT = bSMT_cond and not bFired
+rSMT = rSMT_cond and not rFired
+
+if bSMT
+    bFired := true
+if rSMT
+    rFired := true
+
+atr14 = ta.atr(14)
+
+BULL  = #00E676
+BEAR  = #FF1744
+NEUT  = #90A4AE
+
+Q1_BG = color.new(#4A148C, 92)
+Q2_BG = color.new(#0D47A1, 92)
+Q3_BG = color.new(#004D40, 92)
+Q4_BG = color.new(#BF360C, 92)
+Q1_BR = color.new(#CE93D8, 40)
+Q2_BR = color.new(#64B5F6, 40)
+Q3_BR = color.new(#4DB6AC, 40)
+Q4_BR = color.new(#FF8A65, 40)
+
+qBG()  => curQ == 1 ? Q1_BG : curQ == 2 ? Q2_BG : curQ == 3 ? Q3_BG : Q4_BG
+qBR()  => curQ == 1 ? Q1_BR : curQ == 2 ? Q2_BR : curQ == 3 ? Q3_BR : Q4_BR
+qStr() => curQ == 1 ? "Q1  ·  6PM – 12AM" : curQ == 2 ? "Q2  ·  12AM – 6AM" : curQ == 3 ? "Q3  ·  6AM – 12PM" : "Q4  ·  12PM – 6PM"
+
+var box sessBox = na
+
+if show_sess
+    if qChg
+        sessBox := box.new(bar_index, high, bar_index + 1, low, border_color=qBR(), bgcolor=qBG(), text=qStr(), text_color=qBR(), text_halign=text.align_left, text_valign=text.align_top, text_size=size.tiny)
+    if not na(sessBox)
+        box.set_right(sessBox,  bar_index + 1)
+        box.set_top(sessBox,    math.max(box.get_top(sessBox),    high))
+        box.set_bottom(sessBox, math.min(box.get_bottom(sessBox), low))
+
+var line doLine = na
+var label doLbl = na
+
+if show_dopen and not na(dOpen) and curQ == 1 and qChg
+    line.delete(doLine)
+    label.delete(doLbl)
+    doLine := line.new(bar_index, dOpen, bar_index + 1, dOpen, color=color.new(NEUT, 30), style=line.style_dashed, width=1, extend=extend.right)
+    doLbl  := label.new(bar_index, dOpen, "D.OPEN  " + str.tostring(dOpen, format.mintick), color=color.new(#0D0D2E, 5), textcolor=color.new(NEUT, 15), style=label.style_label_right, size=size.tiny)
+
+if bSMT
+    label.new(bar_index, low - atr14 * 0.7, "▲  SMT  ·  Q" + str.tostring(curQ), color=color.new(BULL, 5), textcolor=color.new(#E8F5E9, 5), style=label.style_label_up, size=size.normal)
+    line.new(bar_index - 5, pL_p, bar_index, low, color=color.new(BULL, 35), style=line.style_dotted, width=1)
+
+if rSMT
+    label.new(bar_index, high + atr14 * 0.7, "▼  SMT  ·  Q" + str.tostring(curQ), color=color.new(BEAR, 5), textcolor=color.new(#FFEBEE, 5), style=label.style_label_down, size=size.normal)
+    line.new(bar_index - 5, pH_p, bar_index, high, color=color.new(BEAR, 35), style=line.style_dotted, width=1)
+
+var line  tgtLine = na
+var label tgtLbl  = na
+
+if show_tgt and (bSMT or rSMT)
+    line.delete(tgtLine)
+    label.delete(tgtLbl)
+    tP = bSMT ? dHigh : dLow
+    tC = bSMT ? color.new(BULL, 5) : color.new(BEAR, 5)
+    tT = bSMT ? "▲  TARGET  " + str.tostring(dHigh, format.mintick) : "▼  TARGET  " + str.tostring(dLow, format.mintick)
+    tgtLine := line.new(bar_index, tP, bar_index + 1, tP, color=tC, style=line.style_dotted, width=2, extend=extend.right)
+    tgtLbl  := label.new(bar_index, tP, tT, color=color.new(#050510, 10), textcolor=tC, style=label.style_label_right, size=size.small)
+
+var box[]  fvgBoxes  = array.new_box()
+var bool[] fvgIsBull = array.new_bool()
+var bool[] fvgDone   = array.new_bool()
+
+if show_fvg
+    bTop = low
+    bBot = high[2]
+    if bBot < bTop and (not fvg_filter or (bTop - bBot <= atr14 * fvg_mult))
+        b = box.new(bar_index - 2, bTop, bar_index, bBot, border_color=color.new(BULL, 45), bgcolor=color.new(BULL, 88), text="FVG ↑", text_color=color.new(BULL, 15), text_halign=text.align_right, text_valign=text.align_center, text_size=size.tiny, extend=extend.right)
+        array.push(fvgBoxes,  b)
+        array.push(fvgIsBull, true)
+        array.push(fvgDone,   false)
+
+    rTop = low[2]
+    rBot = high
+    if rTop > rBot and (not fvg_filter or (rTop - rBot <= atr14 * fvg_mult))
+        b = box.new(bar_index - 2, rTop, bar_index, rBot, border_color=color.new(BEAR, 45), bgcolor=color.new(BEAR, 88), text="FVG ↓", text_color=color.new(BEAR, 15), text_halign=text.align_right, text_valign=text.align_center, text_size=size.tiny, extend=extend.right)
+        array.push(fvgBoxes,  b)
+        array.push(fvgIsBull, false)
+        array.push(fvgDone,   false)
+
+    n = array.size(fvgBoxes)
+    if n > 0
+        for i = 0 to n - 1
+            if not array.get(fvgDone, i)
+                bx   = array.get(fvgBoxes,  i)
+                bull = array.get(fvgIsBull, i)
+                top_ = box.get_top(bx)
+                bot_ = box.get_bottom(bx)
+                touched = bull ? low <= top_ : high >= bot_
+                if touched
+                    box.set_bgcolor(bx,      color.new(bull ? BULL : BEAR, 96))
+                    box.set_border_color(bx, color.new(bull ? BULL : BEAR, 78))
+                    box.set_right(bx,        bar_index)
+                    box.set_extend(bx,       extend.none)
+                    array.set(fvgDone, i,    true)
+
+if show_table and barstate.islast
+    var table tbl = table.new(position.top_right, 2, 5, frame_width=1, frame_color=color.new(#263238, 40), border_width=1, border_color=color.new(#1A237E, 50), bgcolor=color.new(#050514, 15))
+
+    bsStr = bullBias ? "BULLISH ▲" : bearBias ? "BEARISH ▼" : "NEUTRAL"
+    bsCol = bullBias ? color.new(BULL, 5) : bearBias ? color.new(BEAR, 5) : color.new(NEUT, 20)
+
+    table.cell(tbl, 0, 0, "MALLOY LABS", bgcolor=color.new(#0D0D2E, 10), text_color=color.new(#90CAF9, 10), text_size=size.small, text_halign=text.align_left)
+    table.cell(tbl, 1, 0, "◈ SMT",       bgcolor=color.new(#0D0D2E, 10), text_color=color.new(#546E7A, 0),  text_size=size.small)
+    table.cell(tbl, 0, 1, "SESSION",     bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 1, qStr(),        bgcolor=color.new(#050514, 20), text_color=qBR(),                  text_size=size.tiny)
+    table.cell(tbl, 0, 2, "BIAS",        bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 2, bsStr,         bgcolor=color.new(#050514, 20), text_color=bsCol,                  text_size=size.tiny)
+    table.cell(tbl, 0, 3, "CORR",        bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 3, corr_sym,      bgcolor=color.new(#050514, 20), text_color=color.new(#ECEFF1, 15), text_size=size.tiny)
+    table.cell(tbl, 0, 4, "D.OPEN",      bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 4, not na(dOpen) ? str.tostring(dOpen, format.mintick) : "–", bgcolor=color.new(#050514, 20), text_color=color.new(NEUT, 15), text_size=size.tiny)
+
+alertcondition(bSMT, "ML·SMT — Bullish Signal", "Malloy Labs: Bullish SMT Divergence on {{ticker}} [{{interval}}] — Target: Day High")
+alertcondition(rSMT, "ML·SMT — Bearish Signal", "Malloy Labs: Bearish SMT Divergence on {{ticker}} [{{interval}}] — Target: Day Low")
