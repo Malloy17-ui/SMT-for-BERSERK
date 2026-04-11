@@ -1,21 +1,17 @@
 //@version=5
 indicator("Malloy Labs · SMT Divergence", shorttitle="ML·SMT", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
 
-// ══════════════════════════════════════════════════════════════════════
-//  INPUT GROUPS
-// ══════════════════════════════════════════════════════════════════════
 G_SMT = "⚡  SMT"
 G_FVG = "📦  FVG"
 G_VIS = "🎨  Visuals"
 G_COL = "🎨  Colors"
 
-use_auto     = input.bool(true, "Auto-Detect Pair", group=G_SMT,
-                tooltip="Auto-maps known pairs:\nEURUSD↔GBPUSD  ·  USDJPY↔USDCHF  ·  AUDUSD↔NZDUSD\nGBPJPY↔EURJPY  ·  BTCUSD↔ETHUSD  ·  NQ↔ES\nDisable to enter pair manually below.")
+use_auto     = input.bool(true, "Auto-Detect Pair", tooltip="Auto-maps: EURUSD/GBPUSD | USDJPY/USDCHF | AUDUSD/NZDUSD | GBPJPY/EURJPY | BTCUSD/ETHUSD | NQ/ES. Disable to set manually.", group=G_SMT)
 corr_sym     = input.symbol("GBPUSD", "Manual Correlated Symbol", group=G_SMT)
 show_pending = input.bool(true,  "Show Pending Sweep Label", group=G_VIS)
 show_fvg     = input.bool(true,  "Show FVGs",                group=G_FVG)
 fvg_filter   = input.bool(true,  "FVG Size Filter",          group=G_FVG)
-fvg_mult     = input.float(1.5,  "Max FVG (× ATR14)",        group=G_FVG, minval=0.1, step=0.1)
+fvg_mult     = input.float(1.5,  "Max FVG (x ATR14)",        group=G_FVG, minval=0.1, step=0.1)
 show_sess    = input.bool(true,  "Session Boxes",            group=G_VIS)
 show_dopen   = input.bool(true,  "Daily Open Line",          group=G_VIS)
 show_tgt     = input.bool(true,  "Target Lines",             group=G_VIS)
@@ -30,39 +26,20 @@ q3_col       = input.color(#4DB6AC, "Q3 Color",         group=G_COL)
 q4_col       = input.color(#FF8A65, "Q4 Color",         group=G_COL)
 sess_opacity = input.int(92, "Session Box Opacity", group=G_COL, minval=50, maxval=99)
 
-// ══════════════════════════════════════════════════════════════════════
-//  AUTO PAIR DETECTION
-//  Maps ticker → correlated pair using broker prefix for full symbol
-// ══════════════════════════════════════════════════════════════════════
 _t   = syminfo.ticker
 _pfx = syminfo.prefix
 
-_auto_t = _t == "EURUSD" ? "GBPUSD" :
-          _t == "GBPUSD" ? "EURUSD" :
-          _t == "USDJPY" ? "USDCHF" :
-          _t == "USDCHF" ? "USDJPY" :
-          _t == "AUDUSD" ? "NZDUSD" :
-          _t == "NZDUSD" ? "AUDUSD" :
-          _t == "GBPJPY" ? "EURJPY" :
-          _t == "EURJPY" ? "GBPJPY" :
-          _t == "BTCUSD" ? "ETHUSD" :
-          _t == "ETHUSD" ? "BTCUSD" : ""
+_auto_t = _t == "EURUSD" ? "GBPUSD" : _t == "GBPUSD" ? "EURUSD" : _t == "USDJPY" ? "USDCHF" : _t == "USDCHF" ? "USDJPY" : _t == "AUDUSD" ? "NZDUSD" : _t == "NZDUSD" ? "AUDUSD" : _t == "GBPJPY" ? "EURJPY" : _t == "EURJPY" ? "GBPJPY" : _t == "BTCUSD" ? "ETHUSD" : _t == "ETHUSD" ? "BTCUSD" : ""
 
 _has_auto = _auto_t != ""
 final_sym = use_auto and _has_auto ? _pfx + ":" + _auto_t : corr_sym
 disp_corr = use_auto and _has_auto ? _auto_t : corr_sym
 
-// ══════════════════════════════════════════════════════════════════════
-//  SESSION DETECTION  (New York Time)
-// ══════════════════════════════════════════════════════════════════════
 TZ   = "America/New_York"
 nyH  = hour(time, TZ)
 curQ = nyH >= 18 ? 1 : nyH < 6 ? 2 : nyH < 12 ? 3 : 4
 qChg = curQ != curQ[1]
 
-// ══════════════════════════════════════════════════════════════════════
-//  DAILY TRACKING
-// ══════════════════════════════════════════════════════════════════════
 var float dOpen = na
 var float dHigh = na
 var float dLow  = na
@@ -79,24 +56,16 @@ if not na(dOpen)
 bullBias = not na(dOpen) and close < dOpen
 bearBias = not na(dOpen) and close > dOpen
 
-// ══════════════════════════════════════════════════════════════════════
-//  CORRELATED SYMBOL DATA
-// ══════════════════════════════════════════════════════════════════════
 [c_h, c_l] = request.security(final_sym, timeframe.period, [high, low], lookahead=barmerge.lookahead_off)
 
-// ══════════════════════════════════════════════════════════════════════
-//  SESSION HIGH / LOW TRACKING
-//  cX_p = primary | pX_p = correlated  (naming kept from v2)
-//  _p suffix = PREVIOUS session | _c suffix = CURRENT session (running)
-// ══════════════════════════════════════════════════════════════════════
-var float cH_p = na   // primary: current session high (running)
-var float cL_p = na   // primary: current session low  (running)
-var float cH_c = na   // correlated: current session high (running)
-var float cL_c = na   // correlated: current session low  (running)
-var float pH_p = na   // primary: PREVIOUS session high
-var float pL_p = na   // primary: PREVIOUS session low
-var float pH_c = na   // correlated: PREVIOUS session high
-var float pL_c = na   // correlated: PREVIOUS session low
+var float cH_p = na
+var float cL_p = na
+var float cH_c = na
+var float cL_c = na
+var float pH_p = na
+var float pL_p = na
+var float pH_c = na
+var float pL_c = na
 
 if qChg
     pH_p := cH_p
@@ -113,57 +82,20 @@ else
     cH_c := math.max(nz(cH_c, c_h), c_h)
     cL_c := math.min(nz(cL_c, c_l), c_l)
 
-// ══════════════════════════════════════════════════════════════════════
-//  ATR
-// ══════════════════════════════════════════════════════════════════════
 atr14 = ta.atr(14)
 
-// ══════════════════════════════════════════════════════════════════════
-//  FVG DETECTION
-// ══════════════════════════════════════════════════════════════════════
 primBullFVG = high[2] < low  and (not fvg_filter or (low - high[2] <= atr14 * fvg_mult))
 primBearFVG = low[2]  > high and (not fvg_filter or (low[2] - high  <= atr14 * fvg_mult))
 corrBullFVG = c_h[2] < c_l
 corrBearFVG = c_l[2] > c_h
 
-// ══════════════════════════════════════════════════════════════════════
-//  SMT SWEEP DETECTION + CONFIRMATION STATE MACHINE  [V3]
-//
-//  FIXES FROM V2:
-//  1. Sweep check now uses per-bar c_l / c_h for correlated (not the
-//     cumulative session running min/max). The old cL_c / cH_c check
-//     was permanently contaminated by any early-session wick that
-//     crossed the previous extreme, blocking valid setups later.
-//     Fix: c_l >= pL_c and c_h <= pH_c in the raw sweep condition.
-//
-//  2. If correlated SUBSEQUENTLY crosses its previous extreme while
-//     a regular sweep is pending, the pending is cancelled.
-//     "Both pairs swept" = no SMT divergence → no signal.
-//
-//  3. MIRROR SWEEP: when correlated takes the previous extreme and
-//     primary HOLDS, primary is the strong side. It now fires its own
-//     confirmation signal once a primary FVG forms. This surfaces the
-//     SMT on BOTH charts simultaneously (the feature he requested).
-//     Mirror label reads "SMT HOLD SIDE" to distinguish from regular.
-// ══════════════════════════════════════════════════════════════════════
 validPair = curQ >= 2
 
-// ── Sweep raw conditions ──────────────────────────────────────────────
-// Regular: primary sweeps prev extreme, correlated holds (per-bar check)
-bSweepRaw = validPair and not na(pL_p) and not na(pL_c) and not na(dOpen) and
-             low < pL_p and c_l >= pL_c and low < dOpen
+bSweepRaw  = validPair and not na(pL_p) and not na(pL_c) and not na(dOpen) and low < pL_p and c_l >= pL_c and low < dOpen
+rSweepRaw  = validPair and not na(pH_p) and not na(pH_c) and not na(dOpen) and high > pH_p and c_h <= pH_c and high > dOpen
+bMirrorRaw = validPair and not na(pL_p) and not na(pL_c) and c_l < pL_c and low >= pL_p
+rMirrorRaw = validPair and not na(pH_p) and not na(pH_c) and c_h > pH_c and high <= pH_p
 
-rSweepRaw = validPair and not na(pH_p) and not na(pH_c) and not na(dOpen) and
-             high > pH_p and c_h <= pH_c and high > dOpen
-
-// Mirror: correlated sweeps prev extreme, primary holds
-bMirrorRaw = validPair and not na(pL_p) and not na(pL_c) and
-              c_l < pL_c and low >= pL_p
-
-rMirrorRaw = validPair and not na(pH_p) and not na(pH_c) and
-              c_h > pH_c and high <= pH_p
-
-// ── State variables ───────────────────────────────────────────────────
 var bool bPending       = false
 var bool rPending       = false
 var bool bPrimFVGSeen   = false
@@ -172,7 +104,6 @@ var bool rPrimFVGSeen   = false
 var bool rCorrFVGSeen   = false
 var bool bFired         = false
 var bool rFired         = false
-
 var bool bMirrorPend    = false
 var bool rMirrorPend    = false
 var bool bMirrorPrimFVG = false
@@ -180,7 +111,6 @@ var bool rMirrorPrimFVG = false
 var bool bMirrorFired   = false
 var bool rMirrorFired   = false
 
-// Session reset
 if qChg
     bPending        := false
     rPending        := false
@@ -197,7 +127,6 @@ if qChg
     bMirrorFired    := false
     rMirrorFired    := false
 
-// Cancel regular pending if correlated subsequently sweeps (both swept = no SMT)
 if bPending and not bFired and not na(pL_c) and c_l < pL_c
     bPending     := false
     bPrimFVGSeen := false
@@ -208,7 +137,6 @@ if rPending and not rFired and not na(pH_c) and c_h > pH_c
     rPrimFVGSeen := false
     rCorrFVGSeen := false
 
-// Cancel mirror pending if primary subsequently sweeps (both swept = no SMT)
 if bMirrorPend and not bMirrorFired and not na(pL_p) and low < pL_p
     bMirrorPend    := false
     bMirrorPrimFVG := false
@@ -217,7 +145,6 @@ if rMirrorPend and not rMirrorFired and not na(pH_p) and high > pH_p
     rMirrorPend    := false
     rMirrorPrimFVG := false
 
-// Detect new sweeps
 bNewSweep  = bSweepRaw  and not bPending    and not bFired
 rNewSweep  = rSweepRaw  and not rPending    and not rFired
 bNewMirror = bMirrorRaw and not bMirrorPend and not bMirrorFired and not bPending and not bFired
@@ -232,7 +159,6 @@ if bNewMirror
 if rNewMirror
     rMirrorPend := true
 
-// FVG accumulation — regular: both primary + correlated FVG required
 if bPending and not bFired
     if primBullFVG
         bPrimFVGSeen := true
@@ -245,7 +171,6 @@ if rPending and not rFired
     if corrBearFVG
         rCorrFVGSeen := true
 
-// FVG accumulation — mirror: primary FVG only (correlated already showed the sweep)
 if bMirrorPend and not bMirrorFired
     if primBullFVG
         bMirrorPrimFVG := true
@@ -254,7 +179,6 @@ if rMirrorPend and not rMirrorFired
     if primBearFVG
         rMirrorPrimFVG := true
 
-// Confirmed signals
 bSMT       = bPending    and not bFired       and bPrimFVGSeen   and bCorrFVGSeen
 rSMT       = rPending    and not rFired       and rPrimFVGSeen   and rCorrFVGSeen
 bMirrorSMT = bMirrorPend and not bMirrorFired and bMirrorPrimFVG
@@ -269,105 +193,53 @@ if bMirrorSMT
 if rMirrorSMT
     rMirrorFired := true
 
-// ══════════════════════════════════════════════════════════════════════
-//  COLOR HELPERS
-// ══════════════════════════════════════════════════════════════════════
 qCol() => curQ == 1 ? q1_col : curQ == 2 ? q2_col : curQ == 3 ? q3_col : q4_col
 qBG()  => color.new(curQ == 1 ? q1_col : curQ == 2 ? q2_col : curQ == 3 ? q3_col : q4_col, sess_opacity)
-qStr() => curQ == 1 ? "Q1  ·  6PM – 12AM" : curQ == 2 ? "Q2  ·  12AM – 6AM" : curQ == 3 ? "Q3  ·  6AM – 12PM" : "Q4  ·  12PM – 6PM"
+qStr() => curQ == 1 ? "Q1  6PM-12AM" : curQ == 2 ? "Q2  12AM-6AM" : curQ == 3 ? "Q3  6AM-12PM" : "Q4  12PM-6PM"
 
-// ══════════════════════════════════════════════════════════════════════
-//  SESSION BOXES
-// ══════════════════════════════════════════════════════════════════════
 var box sessBox = na
 
 if show_sess
     if qChg
-        sessBox := box.new(bar_index, high, bar_index + 1, low,
-                    border_color=color.new(qCol(), 40), bgcolor=qBG(),
-                    text=qStr(), text_color=color.new(qCol(), 40),
-                    text_halign=text.align_left, text_valign=text.align_top, text_size=size.tiny)
+        sessBox := box.new(bar_index, high, bar_index + 1, low, border_color=color.new(qCol(), 40), bgcolor=qBG(), text=qStr(), text_color=color.new(qCol(), 40), text_halign=text.align_left, text_valign=text.align_top, text_size=size.tiny)
     if not na(sessBox)
         box.set_right(sessBox, bar_index + 1)
         box.set_top(sessBox, math.max(box.get_top(sessBox), high))
         box.set_bottom(sessBox, math.min(box.get_bottom(sessBox), low))
 
-// ══════════════════════════════════════════════════════════════════════
-//  DAILY OPEN LINE
-// ══════════════════════════════════════════════════════════════════════
 var line doLine = na
 var label doLbl = na
 
 if show_dopen and not na(dOpen) and curQ == 1 and qChg
     line.delete(doLine)
     label.delete(doLbl)
-    doLine := line.new(bar_index, dOpen, bar_index + 1, dOpen,
-               color=color.new(dopen_col, 30), style=line.style_dashed, width=1, extend=extend.right)
-    doLbl  := label.new(bar_index, dOpen, "D.OPEN  " + str.tostring(dOpen, format.mintick),
-               color=color.new(#0D0D2E, 5), textcolor=color.new(dopen_col, 15),
-               style=label.style_label_right, size=size.tiny)
+    doLine := line.new(bar_index, dOpen, bar_index + 1, dOpen, color=color.new(dopen_col, 30), style=line.style_dashed, width=1, extend=extend.right)
+    doLbl  := label.new(bar_index, dOpen, "D.OPEN  " + str.tostring(dOpen, format.mintick), color=color.new(#0D0D2E, 5), textcolor=color.new(dopen_col, 15), style=label.style_label_right, size=size.tiny)
 
-// ══════════════════════════════════════════════════════════════════════
-//  PENDING SWEEP LABELS
-//  FIX: bear pending text changed to near-white (#ECEFF1) for readability
-// ══════════════════════════════════════════════════════════════════════
 if show_pending
     if bNewSweep
-        label.new(bar_index, low - atr14 * 0.5,
-                  "◌  SWEEP ↑  ·  Q" + str.tostring(curQ) + "  ·  FVG PENDING",
-                  color=color.new(#0D0D2E, 10), textcolor=color.new(bull_col, 40),
-                  style=label.style_label_up, size=size.small)
+        label.new(bar_index, low - atr14 * 0.5, "◌  SWEEP UP  Q" + str.tostring(curQ) + "  FVG PENDING", color=color.new(#0D0D2E, 10), textcolor=color.new(bull_col, 40), style=label.style_label_up, size=size.small)
     if rNewSweep
-        label.new(bar_index, high + atr14 * 0.5,
-                  "◌  SWEEP ↓  ·  Q" + str.tostring(curQ) + "  ·  FVG PENDING",
-                  color=color.new(#0D0D2E, 10), textcolor=color.new(#ECEFF1, 20),  // WHITE TEXT FIX
-                  style=label.style_label_down, size=size.small)
+        label.new(bar_index, high + atr14 * 0.5, "◌  SWEEP DOWN  Q" + str.tostring(curQ) + "  FVG PENDING", color=color.new(#0D0D2E, 10), textcolor=color.new(#ECEFF1, 20), style=label.style_label_down, size=size.small)
     if bNewMirror
-        label.new(bar_index, low - atr14 * 0.5,
-                  "◌  HOLD ↑  ·  Q" + str.tostring(curQ) + "  ·  FVG PENDING",
-                  color=color.new(#0D0D2E, 10), textcolor=color.new(bull_col, 50),
-                  style=label.style_label_up, size=size.small)
+        label.new(bar_index, low - atr14 * 0.5, "◌  HOLD UP  Q" + str.tostring(curQ) + "  FVG PENDING", color=color.new(#0D0D2E, 10), textcolor=color.new(bull_col, 50), style=label.style_label_up, size=size.small)
     if rNewMirror
-        label.new(bar_index, high + atr14 * 0.5,
-                  "◌  HOLD ↓  ·  Q" + str.tostring(curQ) + "  ·  FVG PENDING",
-                  color=color.new(#0D0D2E, 10), textcolor=color.new(#ECEFF1, 20),
-                  style=label.style_label_down, size=size.small)
+        label.new(bar_index, high + atr14 * 0.5, "◌  HOLD DOWN  Q" + str.tostring(curQ) + "  FVG PENDING", color=color.new(#0D0D2E, 10), textcolor=color.new(#ECEFF1, 20), style=label.style_label_down, size=size.small)
 
-// ══════════════════════════════════════════════════════════════════════
-//  CONFIRMED SMT LABELS + SWEEP REFERENCE LINE
-// ══════════════════════════════════════════════════════════════════════
 if bSMT
-    label.new(bar_index, low - atr14 * 0.7,
-              "▲  SMT CONFIRMED  ·  Q" + str.tostring(curQ),
-              color=color.new(bull_col, 5), textcolor=color.new(#E8F5E9, 5),
-              style=label.style_label_up, size=size.normal)
-    line.new(bar_index - 5, pL_p, bar_index, low,
-             color=color.new(bull_col, 35), style=line.style_dotted, width=1)
+    label.new(bar_index, low - atr14 * 0.7, "▲  SMT CONFIRMED  Q" + str.tostring(curQ), color=color.new(bull_col, 5), textcolor=color.new(#E8F5E9, 5), style=label.style_label_up, size=size.normal)
+    line.new(bar_index - 5, pL_p, bar_index, low, color=color.new(bull_col, 35), style=line.style_dotted, width=1)
 
 if rSMT
-    label.new(bar_index, high + atr14 * 0.7,
-              "▼  SMT CONFIRMED  ·  Q" + str.tostring(curQ),
-              color=color.new(bear_col, 5), textcolor=color.new(#FFEBEE, 5),
-              style=label.style_label_down, size=size.normal)
-    line.new(bar_index - 5, pH_p, bar_index, high,
-             color=color.new(bear_col, 35), style=line.style_dotted, width=1)
+    label.new(bar_index, high + atr14 * 0.7, "▼  SMT CONFIRMED  Q" + str.tostring(curQ), color=color.new(bear_col, 5), textcolor=color.new(#FFEBEE, 5), style=label.style_label_down, size=size.normal)
+    line.new(bar_index - 5, pH_p, bar_index, high, color=color.new(bear_col, 35), style=line.style_dotted, width=1)
 
-// Mirror confirmed — slightly muted to distinguish from primary sweep side
 if bMirrorSMT
-    label.new(bar_index, low - atr14 * 0.7,
-              "▲  SMT HOLD SIDE  ·  Q" + str.tostring(curQ),
-              color=color.new(bull_col, 20), textcolor=color.new(#E8F5E9, 5),
-              style=label.style_label_up, size=size.normal)
+    label.new(bar_index, low - atr14 * 0.7, "▲  SMT HOLD SIDE  Q" + str.tostring(curQ), color=color.new(bull_col, 20), textcolor=color.new(#E8F5E9, 5), style=label.style_label_up, size=size.normal)
 
 if rMirrorSMT
-    label.new(bar_index, high + atr14 * 0.7,
-              "▼  SMT HOLD SIDE  ·  Q" + str.tostring(curQ),
-              color=color.new(bear_col, 20), textcolor=color.new(#FFEBEE, 5),
-              style=label.style_label_down, size=size.normal)
+    label.new(bar_index, high + atr14 * 0.7, "▼  SMT HOLD SIDE  Q" + str.tostring(curQ), color=color.new(bear_col, 20), textcolor=color.new(#FFEBEE, 5), style=label.style_label_down, size=size.normal)
 
-// ══════════════════════════════════════════════════════════════════════
-//  TARGET LINES
-// ══════════════════════════════════════════════════════════════════════
 var line  tgtLine = na
 var label tgtLbl  = na
 
@@ -379,12 +251,8 @@ if show_tgt and (bSMT or rSMT or bMirrorSMT or rMirrorSMT)
     tC = isBull ? color.new(bull_col, 5) : color.new(bear_col, 5)
     tT = isBull ? "▲  TARGET  " + str.tostring(dHigh, format.mintick) : "▼  TARGET  " + str.tostring(dLow, format.mintick)
     tgtLine := line.new(bar_index, tP, bar_index + 1, tP, color=tC, style=line.style_dotted, width=2, extend=extend.right)
-    tgtLbl  := label.new(bar_index, tP, tT, color=color.new(#050510, 10), textcolor=tC,
-                style=label.style_label_right, size=size.small)
+    tgtLbl  := label.new(bar_index, tP, tT, color=color.new(#050510, 10), textcolor=tC, style=label.style_label_right, size=size.small)
 
-// ══════════════════════════════════════════════════════════════════════
-//  FVG DISPLAY BOXES  (size filter + mitigation)
-// ══════════════════════════════════════════════════════════════════════
 var box[]  fvgBoxes  = array.new_box()
 var bool[] fvgIsBull = array.new_bool()
 var bool[] fvgDone   = array.new_bool()
@@ -393,10 +261,7 @@ if show_fvg
     bTop = low
     bBot = high[2]
     if bBot < bTop and (not fvg_filter or (bTop - bBot <= atr14 * fvg_mult))
-        b = box.new(bar_index - 2, bTop, bar_index, bBot,
-                    border_color=color.new(bull_col, 45), bgcolor=color.new(bull_col, 88),
-                    text="FVG ↑", text_color=color.new(bull_col, 15),
-                    text_halign=text.align_right, text_valign=text.align_center, text_size=size.tiny, extend=extend.right)
+        b = box.new(bar_index - 2, bTop, bar_index, bBot, border_color=color.new(bull_col, 45), bgcolor=color.new(bull_col, 88), text="FVG +", text_color=color.new(bull_col, 15), text_halign=text.align_right, text_valign=text.align_center, text_size=size.tiny, extend=extend.right)
         array.push(fvgBoxes, b)
         array.push(fvgIsBull, true)
         array.push(fvgDone, false)
@@ -404,10 +269,7 @@ if show_fvg
     rTop = low[2]
     rBot = high
     if rTop > rBot and (not fvg_filter or (rTop - rBot <= atr14 * fvg_mult))
-        b = box.new(bar_index - 2, rTop, bar_index, rBot,
-                    border_color=color.new(bear_col, 45), bgcolor=color.new(bear_col, 88),
-                    text="FVG ↓", text_color=color.new(bear_col, 15),
-                    text_halign=text.align_right, text_valign=text.align_center, text_size=size.tiny, extend=extend.right)
+        b = box.new(bar_index - 2, rTop, bar_index, rBot, border_color=color.new(bear_col, 45), bgcolor=color.new(bear_col, 88), text="FVG -", text_color=color.new(bear_col, 15), text_halign=text.align_right, text_valign=text.align_center, text_size=size.tiny, extend=extend.right)
         array.push(fvgBoxes, b)
         array.push(fvgIsBull, false)
         array.push(fvgDone, false)
@@ -428,55 +290,31 @@ if show_fvg
                     box.set_extend(bx, extend.none)
                     array.set(fvgDone, i, true)
 
-// ══════════════════════════════════════════════════════════════════════
-//  INFO PANEL
-// ══════════════════════════════════════════════════════════════════════
 if show_table and barstate.islast
-    var table tbl = table.new(position.top_right, 2, 6,
-                    frame_width=1, frame_color=color.new(#263238, 40),
-                    border_width=1, border_color=color.new(#1A237E, 50),
-                    bgcolor=color.new(#050514, 15))
+    var table tbl = table.new(position.top_right, 2, 6, frame_width=1, frame_color=color.new(#263238, 40), border_width=1, border_color=color.new(#1A237E, 50), bgcolor=color.new(#050514, 15))
 
-    statusStr = bFired       ? "CONFIRMED ▲"    :
-                rFired       ? "CONFIRMED ▼"    :
-                bMirrorFired ? "HOLD SIDE ▲"    :
-                rMirrorFired ? "HOLD SIDE ▼"    :
-                bPending     ? "SWEEP ↑ · FVG?" :
-                rPending     ? "SWEEP ↓ · FVG?" :
-                bMirrorPend  ? "HOLD ↑ · FVG?"  :
-                rMirrorPend  ? "HOLD ↓ · FVG?"  : "WATCHING"
-
-    statusCol = bFired or bMirrorFired  ? color.new(bull_col, 5)  :
-                rFired or rMirrorFired  ? color.new(bear_col, 5)  :
-                bPending or bMirrorPend ? color.new(bull_col, 30) :
-                rPending or rMirrorPend ? color.new(bear_col, 30) :
-                color.new(#546E7A, 0)
-
+    statusStr = bFired ? "CONFIRMED ▲" : rFired ? "CONFIRMED ▼" : bMirrorFired ? "HOLD SIDE ▲" : rMirrorFired ? "HOLD SIDE ▼" : bPending ? "SWEEP UP FVG?" : rPending ? "SWEEP DN FVG?" : bMirrorPend ? "HOLD UP FVG?" : rMirrorPend ? "HOLD DN FVG?" : "WATCHING"
+    statusCol = bFired or bMirrorFired ? color.new(bull_col, 5) : rFired or rMirrorFired ? color.new(bear_col, 5) : bPending or bMirrorPend ? color.new(bull_col, 30) : rPending or rMirrorPend ? color.new(bear_col, 30) : color.new(#546E7A, 0)
     bsStr = bullBias ? "BULLISH ▲" : bearBias ? "BEARISH ▼" : "NEUTRAL"
     bsCol = bullBias ? color.new(bull_col, 5) : bearBias ? color.new(bear_col, 5) : color.new(#90A4AE, 20)
+    autoTag = use_auto and _has_auto ? " AUTO" : ""
 
-    autoTag = use_auto and _has_auto ? "  ·AUTO" : ""
+    table.cell(tbl, 0, 0, "MALLOY LABS", bgcolor=color.new(#0D0D2E, 10), text_color=color.new(#90CAF9, 10), text_size=size.small, text_halign=text.align_left)
+    table.cell(tbl, 1, 0, "SMT",         bgcolor=color.new(#0D0D2E, 10), text_color=color.new(#546E7A, 0),  text_size=size.small)
+    table.cell(tbl, 0, 1, "STATUS",      bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 1, statusStr,     bgcolor=color.new(#050514, 20), text_color=statusCol,              text_size=size.tiny)
+    table.cell(tbl, 0, 2, "SESSION",     bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 2, qStr(),        bgcolor=color.new(#050514, 20), text_color=color.new(qCol(), 40),  text_size=size.tiny)
+    table.cell(tbl, 0, 3, "BIAS",        bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 3, bsStr,         bgcolor=color.new(#050514, 20), text_color=bsCol,                  text_size=size.tiny)
+    table.cell(tbl, 0, 4, "CORR",        bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 4, disp_corr + autoTag, bgcolor=color.new(#050514, 20), text_color=color.new(#ECEFF1, 15), text_size=size.tiny)
+    table.cell(tbl, 0, 5, "D.OPEN",      bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
+    table.cell(tbl, 1, 5, not na(dOpen) ? str.tostring(dOpen, format.mintick) : "-", bgcolor=color.new(#050514, 20), text_color=color.new(#90A4AE, 15), text_size=size.tiny)
 
-    table.cell(tbl, 0, 0, "MALLOY LABS",        bgcolor=color.new(#0D0D2E, 10), text_color=color.new(#90CAF9, 10), text_size=size.small, text_halign=text.align_left)
-    table.cell(tbl, 1, 0, "◈ SMT",              bgcolor=color.new(#0D0D2E, 10), text_color=color.new(#546E7A, 0),  text_size=size.small)
-    table.cell(tbl, 0, 1, "STATUS",             bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
-    table.cell(tbl, 1, 1, statusStr,            bgcolor=color.new(#050514, 20), text_color=statusCol,              text_size=size.tiny)
-    table.cell(tbl, 0, 2, "SESSION",            bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
-    table.cell(tbl, 1, 2, qStr(),               bgcolor=color.new(#050514, 20), text_color=color.new(qCol(), 40),  text_size=size.tiny)
-    table.cell(tbl, 0, 3, "BIAS",               bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
-    table.cell(tbl, 1, 3, bsStr,                bgcolor=color.new(#050514, 20), text_color=bsCol,                  text_size=size.tiny)
-    table.cell(tbl, 0, 4, "CORR",               bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
-    table.cell(tbl, 1, 4, disp_corr + autoTag,  bgcolor=color.new(#050514, 20), text_color=color.new(#ECEFF1, 15), text_size=size.tiny)
-    table.cell(tbl, 0, 5, "D.OPEN",             bgcolor=color.new(#050514, 20), text_color=color.new(#546E7A, 0),  text_size=size.tiny, text_halign=text.align_left)
-    table.cell(tbl, 1, 5, not na(dOpen) ? str.tostring(dOpen, format.mintick) : "–",
-               bgcolor=color.new(#050514, 20), text_color=color.new(#90A4AE, 15), text_size=size.tiny)
-
-// ══════════════════════════════════════════════════════════════════════
-//  ALERTS  (6 total)
-// ══════════════════════════════════════════════════════════════════════
-alertcondition(bNewSweep,   "ML·SMT — Bullish Sweep Detected", "Malloy Labs: Bullish sweep on {{ticker}} — FVG confirmation pending")
-alertcondition(rNewSweep,   "ML·SMT — Bearish Sweep Detected", "Malloy Labs: Bearish sweep on {{ticker}} — FVG confirmation pending")
-alertcondition(bSMT,        "ML·SMT — Bullish CONFIRMED",      "Malloy Labs: Bullish SMT CONFIRMED on {{ticker}} [{{interval}}] — Target: Day High")
-alertcondition(rSMT,        "ML·SMT — Bearish CONFIRMED",      "Malloy Labs: Bearish SMT CONFIRMED on {{ticker}} [{{interval}}] — Target: Day Low")
-alertcondition(bMirrorSMT,  "ML·SMT — Bullish HOLD SIDE",      "Malloy Labs: Bullish SMT Hold Side on {{ticker}} [{{interval}}] — {{ticker}} is the strong pair")
-alertcondition(rMirrorSMT,  "ML·SMT — Bearish HOLD SIDE",      "Malloy Labs: Bearish SMT Hold Side on {{ticker}} [{{interval}}] — {{ticker}} is the strong pair")
+alertcondition(bNewSweep,  "ML·SMT — Bullish Sweep Detected", "Malloy Labs: Bullish sweep on {{ticker}} — FVG confirmation pending")
+alertcondition(rNewSweep,  "ML·SMT — Bearish Sweep Detected", "Malloy Labs: Bearish sweep on {{ticker}} — FVG confirmation pending")
+alertcondition(bSMT,       "ML·SMT — Bullish CONFIRMED",      "Malloy Labs: Bullish SMT CONFIRMED on {{ticker}} [{{interval}}] — Target: Day High")
+alertcondition(rSMT,       "ML·SMT — Bearish CONFIRMED",      "Malloy Labs: Bearish SMT CONFIRMED on {{ticker}} [{{interval}}] — Target: Day Low")
+alertcondition(bMirrorSMT, "ML·SMT — Bullish HOLD SIDE",      "Malloy Labs: Bullish SMT Hold Side on {{ticker}} [{{interval}}] — strong pair")
+alertcondition(rMirrorSMT, "ML·SMT — Bearish HOLD SIDE",      "Malloy Labs: Bearish SMT Hold Side on {{ticker}} [{{interval}}] — strong pair")
